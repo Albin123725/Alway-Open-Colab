@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: colab-keeper
+    env: python-3
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python colab-keeper.py
+    envVars:
+      - key: GOOGLE_EMAIL
+        sync: false
+      - key: GOOGLE_PASSWORD
+        sync: false
+      - key: COLAB_NOTEBOOK_ID
+        sync: false
+    autoDeploy: true
