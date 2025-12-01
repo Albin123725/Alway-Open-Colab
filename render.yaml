@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: minecraft-bot
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22
+      - key: MINECRAFT_SERVER_HOST
+        sync: false
+      - key: MINECRAFT_SERVER_PORT
+        sync: false
+      - key: MINECRAFT_BOT_USERNAME
+        sync: false
+      - key: MINECRAFT_VERSION
+        sync: false
+    autoDeploy: true
+    healthCheckPath: /health
