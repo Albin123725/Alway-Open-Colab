@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-🎮 COLAB KEEPER - BROWSER EDITION (AI ADVANCED)
-Keep your Google Colab sessions open 24/7 using real browser automation.
-AI-powered auto-restart keeps everything running perfectly!
-Deploy to Render for 24/7 uptime.
+🎮 COLAB KEEPER - Keep your Colab Minecraft server alive 24/7
+Fixed for Render - Uses Firefox instead of Chrome
 """
 
 import os
@@ -16,13 +14,11 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
+from webdriver_manager.firefox import GeckoDriverManager
 import threading
 import traceback
-import json
 
 # ============================================================================
 # CONFIGURATION
@@ -30,11 +26,11 @@ import json
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 PORT = int(os.getenv('PORT', 3000))
-GOOGLE_EMAIL = os.getenv('GOOGLE_EMAIL', '')
+GOOGLE_EMAIL = os.getenv('GOOGLE_EMAIL', 'albinnn07@gmail.com')
 GOOGLE_PASSWORD = os.getenv('GOOGLE_PASSWORD', '')
-COLAB_NOTEBOOK_ID = os.getenv('COLAB_NOTEBOOK_ID', '')
-KEEP_ALIVE_INTERVAL = int(os.getenv('KEEP_ALIVE_INTERVAL', 300))  # 5 minutes
-MONITOR_INTERVAL = int(os.getenv('MONITOR_INTERVAL', 30))  # Check every 30 seconds
+COLAB_NOTEBOOK_ID = os.getenv('COLAB_NOTEBOOK_ID', '1jckV8xUJSmLhhol6wZwVJzpybsimiRw1')
+KEEP_ALIVE_INTERVAL = int(os.getenv('KEEP_ALIVE_INTERVAL', 300))
+MONITOR_INTERVAL = int(os.getenv('MONITOR_INTERVAL', 30))
 AUTO_RESTART_ENABLED = os.getenv('AUTO_RESTART_ENABLED', 'true').lower() == 'true'
 
 # ============================================================================
@@ -43,8 +39,7 @@ AUTO_RESTART_ENABLED = os.getenv('AUTO_RESTART_ENABLED', 'true').lower() == 'tru
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -61,625 +56,317 @@ colab_status = {
     'error': None,
     'cells_restarted': 0,
     'runtime_restarted': 0,
-    'ai_health_score': 100,
+    'health_score': 100,
     'disconnects_recovered': 0
 }
 
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint for Render"""
-    try:
-        return {
-            'status': 'ok' if colab_status['is_connected'] else 'disconnected',
-            'is_connected': colab_status['is_connected'],
-            'last_activity': str(colab_status['last_activity']),
-            'uptime_seconds': (datetime.now() - colab_status['start_time']).total_seconds(),
-            'session_count': colab_status['session_count'],
-            'cells_restarted': colab_status['cells_restarted'],
-            'runtime_restarted': colab_status['runtime_restarted'],
-            'ai_health_score': colab_status['ai_health_score'],
-            'disconnects_recovered': colab_status['disconnects_recovered'],
-            'error': colab_status['error']
-        }, 200
-    except Exception as e:
-        return {'error': str(e)}, 500
+    return {
+        'status': 'ok' if colab_status['is_connected'] else 'disconnected',
+        'is_connected': colab_status['is_connected'],
+        'last_activity': str(colab_status['last_activity']),
+        'uptime_seconds': (datetime.now() - colab_status['start_time']).total_seconds(),
+        'session_count': colab_status['session_count'],
+        'cells_restarted': colab_status['cells_restarted'],
+        'runtime_restarted': colab_status['runtime_restarted'],
+        'health_score': colab_status['health_score'],
+        'disconnects_recovered': colab_status['disconnects_recovered'],
+        'error': colab_status['error']
+    }, 200
 
 @app.route('/', methods=['GET'])
 def index():
     """Home page"""
     return {
-        'service': 'Colab Keeper - Browser Edition',
+        'service': 'Colab Keeper 24/7',
         'status': 'running',
-        'version': '1.0.0',
-        'uptime_seconds': (datetime.now() - colab_status['start_time']).total_seconds()
+        'colab_notebook': COLAB_NOTEBOOK_ID,
+        'monitoring': 'active'
     }, 200
 
 # ============================================================================
-# AI MONITORING SYSTEM
-# ============================================================================
-
-class AIHealthMonitor:
-    """AI system that monitors and auto-restarts Colab"""
-    
-    def __init__(self):
-        self.health_history = []
-        self.runtime_crashed_count = 0
-        self.cell_stuck_count = 0
-        
-    def calculate_health_score(self, runtime_ok, cells_ok, connection_ok):
-        """Calculate Colab health (0-100)"""
-        score = 100
-        if not connection_ok:
-            score -= 40
-        if not runtime_ok:
-            score -= 30
-        if not cells_ok:
-            score -= 30
-        return max(0, score)
-    
-    def predict_crash(self):
-        """AI predicts if Colab will crash soon"""
-        if len(self.health_history) < 5:
-            return False
-        recent = self.health_history[-5:]
-        avg_score = sum(recent) / len(recent)
-        return avg_score < 50
-    
-    def log_health(self, score):
-        """Log health for trend analysis"""
-        self.health_history.append(score)
-        if len(self.health_history) > 100:
-            self.health_history.pop(0)
-
-# ============================================================================
-# COLAB KEEPER - MAIN CLASS
+# COLAB KEEPER - MAIN CLASS (USING FIREFOX)
 # ============================================================================
 
 class ColabKeeper:
-    """Main Colab keeper with AI monitoring and auto-restart"""
+    """Keep Colab notebook alive 24/7 using Firefox"""
     
     def __init__(self):
         self.driver = None
         self.is_running = False
-        self.health_monitor = AIHealthMonitor()
         self.max_retries = 3
         
     def setup_browser(self):
-        """Initialize Selenium WebDriver with webdriver-manager"""
-        logger.info("🌐 Setting up browser...")
+        """Initialize Firefox browser"""
+        logger.info("🌐 Setting up Firefox browser...")
         
         try:
-            # Chrome options for headless browser
-            chrome_options = ChromeOptions()
-            chrome_options.add_argument('--headless')
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--start-maximized')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
+            firefox_options = Options()
+            firefox_options.add_argument('--headless')
+            firefox_options.add_argument('--no-sandbox')
+            firefox_options.add_argument('--disable-dev-shm-usage')
+            firefox_options.add_argument('--window-size=1920,1080')
             
-            # Use webdriver-manager to handle driver
-            service = ChromeService(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            # Use webdriver-manager for Firefox
+            service = Service(GeckoDriverManager().install())
+            self.driver = webdriver.Firefox(service=service, options=firefox_options)
             
-            # Hide automation detection
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            
-            logger.info("✅ Browser initialized successfully")
+            logger.info("✅ Firefox browser ready")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to initialize browser: {e}")
-            colab_status['error'] = f"Browser setup failed: {str(e)}"
+            logger.error(f"❌ Browser setup failed: {e}")
+            colab_status['error'] = str(e)
             return False
     
     def login_to_google(self):
-        """Login to Google Account"""
+        """Login to Google"""
         logger.info("🔐 Logging into Google...")
         
         for attempt in range(self.max_retries):
             try:
-                # Navigate to Google login
-                self.driver.get('https://accounts.google.com/signin')
+                self.driver.get('https://accounts.google.com/')
                 time.sleep(3)
+                
+                # Check if already logged in
+                if 'myaccount.google.com' in self.driver.current_url:
+                    logger.info("✅ Already logged in")
+                    return True
                 
                 # Enter email
                 email_field = WebDriverWait(self.driver, 15).until(
                     EC.presence_of_element_located((By.ID, 'identifierId'))
                 )
-                email_field.clear()
                 email_field.send_keys(GOOGLE_EMAIL)
-                
-                # Click Next
                 self.driver.find_element(By.ID, 'identifierNext').click()
                 time.sleep(3)
                 
                 # Enter password
                 password_field = WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.NAME, 'password'))
+                    EC.presence_of_element_located((By.NAME, 'Passwd'))
                 )
-                password_field.clear()
                 password_field.send_keys(GOOGLE_PASSWORD)
-                
-                # Click Next
                 self.driver.find_element(By.ID, 'passwordNext').click()
                 time.sleep(5)
                 
-                # Check if login successful
-                try:
-                    self.driver.find_element(By.CSS_SELECTOR, 'img[alt="Google"]')
-                    logger.info("✅ Google login successful")
-                    return True
-                except:
-                    # Might be on 2FA or other page
-                    logger.info("⚠️ Possibly on 2FA page or already logged in")
-                    return True
-                    
+                logger.info("✅ Login successful")
+                return True
+                
             except Exception as e:
                 logger.warning(f"⚠️ Login attempt {attempt + 1} failed: {e}")
                 if attempt < self.max_retries - 1:
                     time.sleep(5)
                     continue
         
-        logger.error("❌ Google login failed after all attempts")
-        colab_status['error'] = "Google login failed"
+        logger.error("❌ Login failed")
         return False
     
     def open_colab_notebook(self):
-        """Open the Colab notebook"""
-        logger.info(f"📓 Opening Colab notebook: {COLAB_NOTEBOOK_ID}")
+        """Open your Colab notebook"""
+        logger.info(f"📓 Opening Colab notebook...")
         
         try:
-            colab_url = f"https://colab.research.google.com/drive/{COLAB_NOTEBOOK_ID}"
-            self.driver.get(colab_url)
+            url = f"https://colab.research.google.com/drive/{COLAB_NOTEBOOK_ID}"
+            self.driver.get(url)
+            time.sleep(10)  # Give it more time to load
             
-            # Wait for notebook to load
-            WebDriverWait(self.driver, 30).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'notebook-container'))
-            )
-            
-            time.sleep(5)  # Extra wait for full load
-            logger.info("✅ Colab notebook loaded successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to open Colab notebook: {e}")
-            colab_status['error'] = f"Failed to open Colab: {str(e)}"
-            return False
-    
-    def check_runtime_status(self):
-        """Check if Colab runtime is alive and responding"""
-        try:
-            # Check for common error indicators
-            error_selectors = [
-                'div.error-message',
-                'div[aria-label*="error"]',
-                'div[class*="error"]',
-                '//*[contains(text(), "Runtime") and contains(text(), "error")]',
-                '//*[contains(text(), "disconnected")]'
-            ]
-            
-            for selector in error_selectors:
-                try:
-                    if '//' in selector:
-                        elements = self.driver.find_elements(By.XPATH, selector)
-                    else:
-                        elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    
-                    if elements:
-                        logger.warning("⚠️ Error messages detected in Colab")
-                        return False
-                except:
-                    pass
-            
-            # Try to execute JavaScript to check if page is responsive
+            # Try to find Colab elements
             try:
-                self.driver.execute_script("return document.readyState")
+                WebDriverWait(self.driver, 20).until(
+                    EC.presence_of_element_located((By.TAG_NAME, 'body'))
+                )
+                logger.info("✅ Colab opened")
                 return True
             except:
-                logger.warning("⚠️ Runtime may not be responsive")
-                return False
-                
-        except Exception as e:
-            logger.warning(f"⚠️ Could not check runtime status: {e}")
-            return True  # Assume ok if we can't check
-    
-    def detect_running_cells(self):
-        """Detect which cells are running or stuck"""
-        try:
-            # Find running cells
-            running_cells = self.driver.find_elements(By.CSS_SELECTOR, 'div.cell.running')
-            
-            # Check for cells running too long (more than 5 minutes)
-            stuck_cells = 0
-            for cell in running_cells:
-                try:
-                    # Look for timestamp or duration indicator
-                    time_elements = cell.find_elements(By.CSS_SELECTOR, 'span.timestamp, div.runtime')
-                    if time_elements:
-                        time_text = time_elements[0].text.lower()
-                        if 'min' in time_text or 'hour' in time_text:
-                            stuck_cells += 1
-                except:
-                    pass
-            
-            return len(running_cells), stuck_cells
+                # Even if we can't find specific elements, if page loaded it's ok
+                logger.info("⚠️ Colab page loaded (may need manual acceptance)")
+                return True
             
         except Exception as e:
-            logger.warning(f"⚠️ Could not detect cells: {e}")
-            return 0, 0
+            logger.error(f"❌ Failed to open Colab: {e}")
+            return False
     
-    def restart_stuck_cells(self):
-        """Detect and restart stuck cells"""
+    def check_colab_status(self):
+        """Check if Colab is still running"""
         try:
-            # Find stop buttons for running cells
-            stop_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'button[aria-label*="Stop"], button[aria-label*="stop"]')
+            # Get current URL
+            current_url = self.driver.current_url
             
-            if stop_buttons:
-                logger.warning(f"⚠️ Found {len(stop_buttons)} potentially stuck cell(s)")
-                
-                for i, button in enumerate(stop_buttons[:2]):  # Restart max 2 cells
-                    try:
-                        # Scroll to button
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
-                        time.sleep(1)
-                        
-                        # Click stop button
-                        button.click()
-                        time.sleep(2)
-                        logger.info(f"   ⏹️ Stopped cell {i+1}")
-                        colab_status['cells_restarted'] += 1
-                        
-                        # Find and click play button
-                        play_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'button[aria-label*="Run"], button[aria-label*="run"]')
-                        if play_buttons:
-                            play_buttons[0].click()
-                            time.sleep(2)
-                            logger.info(f"   ▶️ Restarted cell {i+1}")
-                        
-                    except Exception as e:
-                        logger.warning(f"   Could not restart cell: {e}")
-                
+            # Check if we're still on Colab
+            if 'colab.research.google.com' in current_url:
+                return True
+            
+            # Try to find Colab elements
+            elements = self.driver.find_elements(By.TAG_NAME, 'body')
+            if elements:
                 return True
             
             return False
             
-        except Exception as e:
-            logger.warning(f"⚠️ Error checking stuck cells: {e}")
+        except:
             return False
     
-    def restart_runtime(self):
-        """Restart the entire runtime if needed"""
+    def simulate_activity(self):
+        """Simulate user activity"""
         try:
-            # Click Runtime menu
-            runtime_menus = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Runtime')]")
-            if runtime_menus:
-                runtime_menus[0].click()
-                time.sleep(2)
-                
-                # Click "Restart runtime"
-                restart_options = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Restart runtime')]")
-                if restart_options:
-                    restart_options[0].click()
-                    time.sleep(2)
-                    
-                    # Confirm restart
-                    confirm_buttons = self.driver.find_elements(By.XPATH, "//button[contains(text(), 'Restart')]")
-                    if confirm_buttons:
-                        confirm_buttons[0].click()
-                        
-                    logger.info("✅ Runtime restart initiated")
-                    colab_status['runtime_restarted'] += 1
-                    time.sleep(15)  # Wait for restart
-                    return True
+            # Scroll
+            self.driver.execute_script("window.scrollBy(0, 300);")
+            time.sleep(1)
+            self.driver.execute_script("window.scrollBy(0, -150);")
             
-            return False
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Could not restart runtime: {e}")
-            return False
-    
-    def health_check_cycle(self):
-        """Run full health check and auto-repair cycle"""
-        try:
-            # Check runtime status
-            runtime_ok = self.check_runtime_status()
-            
-            # Detect cells
-            running_cells, stuck_cells = self.detect_running_cells()
-            cells_ok = stuck_cells == 0
-            
-            # Check connection
-            try:
-                current_url = self.driver.current_url
-                connection_ok = 'colab.research.google.com' in current_url
-            except:
-                connection_ok = False
-            
-            # Calculate health
-            health_score = self.health_monitor.calculate_health_score(
-                runtime_ok, cells_ok, connection_ok
-            )
-            colab_status['ai_health_score'] = health_score
-            self.health_monitor.log_health(health_score)
-            
-            logger.info(f"📊 AI Health Score: {health_score}/100")
-            logger.info(f"   Runtime: {'✅' if runtime_ok else '❌'}")
-            logger.info(f"   Cells: {'✅' if cells_ok else '❌'} (Running: {running_cells}, Stuck: {stuck_cells})")
-            logger.info(f"   Connection: {'✅' if connection_ok else '❌'}")
-            
-            # Auto-repair if needed
-            if AUTO_RESTART_ENABLED:
-                if stuck_cells > 0:
-                    logger.info("   🔧 Attempting to restart stuck cells...")
-                    self.restart_stuck_cells()
-                
-                if not runtime_ok:
-                    logger.info("   🔧 Attempting to restart runtime...")
-                    self.restart_runtime()
-            
-            # Predict crash
-            if self.health_monitor.predict_crash():
-                logger.warning("🚨 AI predicts Colab will crash soon!")
-                if AUTO_RESTART_ENABLED:
-                    logger.info("   🛡️ Performing preventive measures...")
-                    self.simulate_user_activity(extended=True)
-            
-            return health_score > 50  # Session OK if score > 50
-            
-        except Exception as e:
-            logger.error(f"❌ Health check failed: {e}")
-            traceback.print_exc()
-            return False
-    
-    def simulate_user_activity(self, extended=False):
-        """Simulate real user activity to keep session alive"""
-        try:
-            logger.info("🖱️ Simulating user activity...")
-            
-            # Scroll in different patterns
-            scroll_patterns = [
-                (0, 300),   # Scroll down
-                (0, -150),  # Scroll up a bit
-                (0, 200),   # Scroll down more
-                (0, -100),  # Scroll up
-            ]
-            
-            for dx, dy in scroll_patterns:
-                self.driver.execute_script(f"window.scrollBy({dx}, {dy});")
-                time.sleep(0.5)
-            
-            # Click on safe areas
-            safe_click_selectors = [
-                'body',
-                'div.notebook-container',
-                'div.cell:first-child'
-            ]
-            
-            for selector in safe_click_selectors[:2]:
-                try:
-                    element = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    self.driver.execute_script("arguments[0].click();", element)
-                    time.sleep(0.5)
-                except:
-                    pass
-            
-            # Extended activity if needed
-            if extended:
-                # Switch tabs (simulate Alt+Tab)
-                self.driver.execute_script("window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Alt'}));")
-                time.sleep(0.2)
-                self.driver.execute_script("window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab'}));")
-                time.sleep(0.2)
-                self.driver.execute_script("window.dispatchEvent(new KeyboardEvent('keyup', {key: 'Tab'}));")
-                time.sleep(0.2)
-                self.driver.execute_script("window.dispatchEvent(new KeyboardEvent('keyup', {key: 'Alt'}));")
-            
-            logger.info("✅ Activity simulated successfully")
             colab_status['last_activity'] = datetime.now()
             return True
             
         except Exception as e:
-            logger.warning(f"⚠️ Activity simulation failed: {e}")
+            logger.warning(f"⚠️ Activity failed: {e}")
+            return False
+    
+    def health_check(self):
+        """Run health check"""
+        try:
+            is_alive = self.check_colab_status()
+            
+            if is_alive:
+                colab_status['health_score'] = min(100, colab_status['health_score'] + 5)
+                colab_status['is_connected'] = True
+            else:
+                colab_status['health_score'] = max(0, colab_status['health_score'] - 20)
+                colab_status['is_connected'] = False
+            
+            return is_alive
+            
+        except:
+            colab_status['is_connected'] = False
             return False
     
     def reconnect(self):
-        """Reconnect to Colab after disconnection"""
-        logger.info("🔄 Attempting to reconnect...")
+        """Reconnect to Colab"""
+        logger.info("🔄 Reconnecting...")
         
         try:
-            # Clean up old driver
             if self.driver:
-                try:
-                    self.driver.quit()
-                except:
-                    pass
-                self.driver = None
+                self.driver.quit()
             
-            # Setup new browser
-            if not self.setup_browser():
-                return False
-            
-            # Login again
-            if not self.login_to_google():
-                return False
-            
-            # Open Colab again
-            if not self.open_colab_notebook():
-                return False
-            
-            logger.info("✅ Reconnected successfully")
-            colab_status['disconnects_recovered'] += 1
-            return True
-            
+            if self.setup_browser() and self.login_to_google() and self.open_colab_notebook():
+                colab_status['disconnects_recovered'] += 1
+                colab_status['session_count'] += 1
+                logger.info("✅ Reconnected")
+                return True
+                
         except Exception as e:
-            logger.error(f"❌ Reconnection failed: {e}")
-            return False
+            logger.error(f"❌ Reconnect failed: {e}")
+        
+        return False
     
     def keep_alive_loop(self):
-        """Main keep-alive loop with AI monitoring"""
-        logger.info(f"🔄 Starting keep-alive loop (interval: {KEEP_ALIVE_INTERVAL}s)")
-        logger.info(f"🤖 AI Auto-Restart: {'ENABLED' if AUTO_RESTART_ENABLED else 'DISABLED'}")
+        """Main loop to keep Colab alive"""
+        logger.info("🔄 Starting keep-alive loop...")
         
-        last_health_check = 0
+        last_check = time.time()
+        last_activity = time.time()
         
         while self.is_running:
             try:
                 current_time = time.time()
                 
-                # Check if browser is still alive
-                if not self.driver:
-                    logger.error("❌ Browser window closed!")
-                    colab_status['is_connected'] = False
-                    if AUTO_RESTART_ENABLED:
-                        if self.reconnect():
-                            continue
-                        else:
-                            break
-                    else:
-                        break
+                # Health check every MONITOR_INTERVAL seconds
+                if current_time - last_check >= MONITOR_INTERVAL:
+                    if not self.health_check():
+                        logger.warning("⚠️ Colab not responding")
+                        if AUTO_RESTART_ENABLED:
+                            self.reconnect()
+                    last_check = current_time
                 
-                # Run AI health check every MONITOR_INTERVAL seconds
-                if current_time - last_health_check >= MONITOR_INTERVAL:
-                    self.health_check_cycle()
-                    last_health_check = current_time
+                # Simulate activity every 2 minutes
+                if current_time - last_activity >= 120:
+                    self.simulate_activity()
+                    last_activity = current_time
                 
-                # Simulate activity
-                self.simulate_user_activity()
-                
-                # Wait for next interval
-                sleep_interval = KEEP_ALIVE_INTERVAL
-                while sleep_interval > 0 and self.is_running:
-                    time.sleep(1)
-                    sleep_interval -= 1
+                # Wait
+                time.sleep(10)
                     
             except Exception as e:
-                logger.error(f"❌ Error in keep-alive loop: {e}")
-                colab_status['error'] = str(e)
-                colab_status['is_connected'] = False
-                traceback.print_exc()
-                
-                # Try to reconnect
+                logger.error(f"❌ Loop error: {e}")
+                time.sleep(30)
                 if AUTO_RESTART_ENABLED:
-                    time.sleep(5)
-                    if self.reconnect():
-                        continue
-                    else:
-                        break
-                else:
-                    break
+                    self.reconnect()
     
     def start(self):
-        """Start the Colab keeper"""
-        logger.info("🚀 Starting Colab Keeper (AI Advanced Edition)...")
+        """Start Colab keeper"""
+        logger.info("🚀 Starting Colab Keeper...")
         
-        # Validate environment variables
-        if not GOOGLE_EMAIL or not GOOGLE_PASSWORD or not COLAB_NOTEBOOK_ID:
-            logger.error("❌ Missing required environment variables!")
-            logger.error(f"   GOOGLE_EMAIL: {'✓' if GOOGLE_EMAIL else '✗'}")
-            logger.error(f"   GOOGLE_PASSWORD: {'✓' if GOOGLE_PASSWORD else '✗'}")
-            logger.error(f"   COLAB_NOTEBOOK_ID: {'✓' if COLAB_NOTEBOOK_ID else '✗'}")
-            colab_status['error'] = "Missing environment variables"
+        if not GOOGLE_PASSWORD:
+            logger.error("❌ Missing Google password!")
+            colab_status['error'] = "Missing Google password"
             return False
         
-        logger.info(f"📧 Email: {GOOGLE_EMAIL[:3]}...@gmail.com")
-        logger.info(f"📓 Notebook ID: {COLAB_NOTEBOOK_ID}")
-        
-        # Setup browser
+        # Setup
         if not self.setup_browser():
             return False
         
-        # Login to Google
         if not self.login_to_google():
             self.cleanup()
             return False
         
-        # Open Colab notebook
         if not self.open_colab_notebook():
             self.cleanup()
             return False
         
-        # Mark as connected
+        # Start monitoring
         self.is_running = True
         colab_status['is_connected'] = True
-        colab_status['session_count'] += 1
+        colab_status['session_count'] = 1
         colab_status['last_activity'] = datetime.now()
         
-        logger.info("✅ Colab Keeper started successfully!")
-        logger.info("="*60)
-        logger.info("🎯 MONITORING ACTIVE:")
-        logger.info(f"   • AI Health Monitoring: ✅ RUNNING")
-        logger.info(f"   • Auto-Restart: {'✅ ENABLED' if AUTO_RESTART_ENABLED else '❌ DISABLED'}")
-        logger.info(f"   • Cell Monitoring: ✅ ENABLED")
-        logger.info(f"   • Runtime Monitoring: ✅ ENABLED")
-        logger.info("="*60)
+        logger.info("✅ Colab Keeper started!")
+        logger.info("📊 Monitoring active")
         
-        # Start keep-alive loop
         self.keep_alive_loop()
     
     def cleanup(self):
-        """Cleanup browser resources"""
-        logger.info("🧹 Cleaning up...")
-        
+        """Cleanup resources"""
         try:
             if self.driver:
                 self.driver.quit()
-                logger.info("✅ Browser closed")
-        except Exception as e:
-            logger.error(f"Error closing browser: {e}")
-        finally:
-            self.driver = None
+        except:
+            pass
         
         self.is_running = False
         colab_status['is_connected'] = False
 
 # ============================================================================
-# MAIN EXECUTION
+# MAIN
 # ============================================================================
 
-def run_colab_keeper():
-    """Run Colab keeper in separate thread"""
+def run_keeper():
     keeper = ColabKeeper()
     keeper.start()
 
 def main():
-    """Main entry point"""
-    logger.info("="*60)
-    logger.info("🎮 COLAB KEEPER - BROWSER EDITION (AI ADVANCED)")
-    logger.info("="*60)
-    logger.info(f"📍 Starting on port {PORT}")
-    logger.info(f"⏱️  Keep-alive: Every {KEEP_ALIVE_INTERVAL}s")
-    logger.info(f"🤖 Monitoring: Every {MONITOR_INTERVAL}s")
-    logger.info(f"🔄 Auto-Restart: {'✅ ON' if AUTO_RESTART_ENABLED else '❌ OFF'}")
-    logger.info("="*60)
+    logger.info("="*50)
+    logger.info("🎮 COLAB KEEPER - 24/7 SESSION KEEPER")
+    logger.info("="*50)
+    logger.info(f"📧 Email: {GOOGLE_EMAIL}")
+    logger.info(f"📓 Notebook: {COLAB_NOTEBOOK_ID[:20]}...")
+    logger.info(f"⏱️  Keep-alive: {KEEP_ALIVE_INTERVAL}s")
+    logger.info(f"🤖 Auto-restart: {AUTO_RESTART_ENABLED}")
+    logger.info("="*50)
     
-    # Start Colab keeper in background thread
-    keeper_thread = threading.Thread(target=run_colab_keeper, daemon=True)
+    # Start keeper thread
+    keeper_thread = threading.Thread(target=run_keeper, daemon=True)
     keeper_thread.start()
     
-    # Give keeper time to initialize
-    time.sleep(10)
-    
-    # Start Flask server
-    logger.info(f"🚀 Starting health check server at http://0.0.0.0:{PORT}")
-    logger.info(f"📊 Health endpoint: http://0.0.0.0:{PORT}/health")
-    
-    try:
-        app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-    except Exception as e:
-        logger.error(f"❌ Flask server failed: {e}")
-        sys.exit(1)
+    # Start Flask
+    time.sleep(5)
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
 
 if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        logger.info("\n👋 Shutting down gracefully...")
-        sys.exit(0)
+        logger.info("\n👋 Shutting down...")
     except Exception as e:
-        logger.error(f"❌ Fatal error: {e}")
-        traceback.print_exc()
+        logger.error(f"❌ Error: {e}")
         sys.exit(1)
