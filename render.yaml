@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: colab-keeper-browser
+    env: python
+    buildCommand: pip install -r requirements.txt && apt-get update && apt-get install -y chromium-browser firefox-geckodriver
+    startCommand: python colab-keeper-browser.py
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: LOG_LEVEL
+        value: INFO
+      - key: KEEP_ALIVE_INTERVAL
+        value: 300
+      - key: GOOGLE_EMAIL
+        scope: runtime
+      - key: GOOGLE_PASSWORD
+        scope: runtime
+      - key: COLAB_NOTEBOOK_ID
+        scope: runtime
