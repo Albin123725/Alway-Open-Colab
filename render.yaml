@@ -2,7 +2,7 @@ services:
   - type: web
     name: colab-keeper-browser
     env: python
-    buildCommand: pip install -r requirements.txt && apt-get update && apt-get install -y chromium-browser firefox-geckodriver
+    buildCommand: pip install -r requirements.txt
     startCommand: python colab-keeper-browser.py
     envVars:
       - key: PORT
